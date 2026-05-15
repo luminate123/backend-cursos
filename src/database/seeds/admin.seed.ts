@@ -1,16 +1,21 @@
-import { DataSource } from 'typeorm';
+import { DataSource, DataSourceOptions } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { config } from 'dotenv';
 config();
 
-const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: process.env.POSTGRES_HOST || 'localhost',
-  port: parseInt(process.env.POSTGRES_PORT || '5432'),
-  username: process.env.POSTGRES_USER || 'edutech',
-  password: process.env.POSTGRES_PASSWORD || 'edutech123',
-  database: process.env.POSTGRES_DB || 'edutech_db',
-});
+const databaseUrl = process.env.DATABASE_URL;
+const baseOptions: DataSourceOptions = databaseUrl
+  ? { type: 'postgres', url: databaseUrl, ssl: { rejectUnauthorized: false } }
+  : {
+      type: 'postgres',
+      host: process.env.POSTGRES_HOST || 'localhost',
+      port: parseInt(process.env.POSTGRES_PORT || '5432'),
+      username: process.env.POSTGRES_USER || 'edutech',
+      password: process.env.POSTGRES_PASSWORD || 'edutech123',
+      database: process.env.POSTGRES_DB || 'edutech_db',
+    };
+
+const AppDataSource = new DataSource(baseOptions);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
