@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { SeederService } from './seeds/seeder.service';
 
 @Module({
   imports: [
@@ -32,5 +33,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       },
     }),
   ],
+  providers: [SeederService],
+  exports: [SeederService],
 })
 export class DatabaseModule {}
