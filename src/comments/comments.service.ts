@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Comment } from '../entities/comment.entity';
 import { Enrollment, EnrollmentStatus } from '../entities/enrollment.entity';
 import { Course } from '../entities/course.entity';
@@ -23,7 +23,7 @@ export class CommentsService {
 
     // Load only root comments with their replies (2 levels)
     const roots = await this.commentRepository.find({
-      where: { courseId, parentId: null },
+      where: { courseId, parentId: IsNull() },
       relations: ['user', 'replies', 'replies.user'],
       order: { createdAt: 'DESC' },
     });
