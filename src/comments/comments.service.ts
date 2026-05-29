@@ -21,10 +21,14 @@ export class CommentsService {
     const course = await this.courseRepository.findOne({ where: { id: courseId } });
     if (!course) throw new NotFoundException('Course not found');
 
-    return this.commentRepository.find({
-      where: { courseId },
+    // Load only root comments with their replies (2 levels)
+    const roots = await this.commentRepository.find({
+      where: { courseId, parentId: null },
+      relations: ['user', 'replies', 'replies.user'],
       order: { createdAt: 'DESC' },
     });
+
+    return roots;
   }
 
   async create(courseId: string, userId: string, dto: CreateCommentDto): Promise<Comment> {
@@ -39,7 +43,23 @@ export class CommentsService {
       throw new ForbiddenException('Only enrolled students can comment');
     }
 
-    const comment = this.commentRepository.create({ content: dto.content, userId, courseId });
-    return this.commentRepository.save(comment);
+    if (dto.parentId) {
+      const parent = await this.commentRepository.findOne({
+        where: { id: dto.parentId, courseId },
+      });
+      if (!parent) throw new NotFoundException('Parent comment not found');
+    }
+
+    const comment = this.commentRepository.create({
+      content: dto.content,
+      userId,
+      courseId,
+      parentId: dto.parentId ?? null,
+    });
+    const saved = await this.commentRepository.save(comment);
+    return this.commentRepository.findOne({
+      where: { id: saved.id },
+      relations: ['user'],
+    }) as Promise<Comment>;
   }
 }
