@@ -8,6 +8,7 @@ import { CoursesModule } from './courses/courses.module';
 import { SectionsModule } from './sections/sections.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
+import { CommentsModule } from './comments/comments.module';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 
@@ -21,6 +22,7 @@ import { RolesGuard } from './guards/roles.guard';
     SectionsModule,
     LessonsModule,
     EnrollmentsModule,
+    CommentsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
