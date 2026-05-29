@@ -35,12 +35,15 @@ export class CommentsService {
     const course = await this.courseRepository.findOne({ where: { id: courseId } });
     if (!course) throw new NotFoundException('Course not found');
 
-    const enrollment = await this.enrollmentRepository.findOne({
-      where: { userId, courseId },
-    });
+    const isInstructor = course.instructorId === userId;
 
-    if (!enrollment || enrollment.status !== EnrollmentStatus.APPROVED) {
-      throw new ForbiddenException('Only enrolled students can comment');
+    if (!isInstructor) {
+      const enrollment = await this.enrollmentRepository.findOne({
+        where: { userId, courseId },
+      });
+      if (!enrollment || enrollment.status !== EnrollmentStatus.APPROVED) {
+        throw new ForbiddenException('Only enrolled students or the instructor can comment');
+      }
     }
 
     if (dto.parentId) {
