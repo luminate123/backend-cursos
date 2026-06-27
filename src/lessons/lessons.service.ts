@@ -6,6 +6,7 @@ import { Section } from '../entities/section.entity';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { Role } from '../enums/role.enum';
+import { UploadsService } from '../uploads/uploads.service';
 
 @Injectable()
 export class LessonsService {
@@ -14,6 +15,7 @@ export class LessonsService {
     private lessonRepository: Repository<Lesson>,
     @InjectRepository(Section)
     private sectionRepository: Repository<Section>,
+    private uploadsService: UploadsService,
   ) {}
 
   private extractYoutubeId(url: string): string | null {
@@ -99,6 +101,12 @@ export class LessonsService {
     if (!lesson) throw new NotFoundException('Lesson not found');
     this.checkOwnership(lesson.section, userId, userRole);
     const sectionId = lesson.sectionId;
+
+    // Purge uploaded resources from R2 (best-effort, don't block deletion)
+    for (const r of lesson.resources ?? []) {
+      await this.uploadsService.deleteByUrl(r.url).catch(() => undefined);
+    }
+
     await this.lessonRepository.remove(lesson);
     await this.updateSectionStats(sectionId);
   }

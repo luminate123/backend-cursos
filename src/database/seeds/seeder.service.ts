@@ -137,7 +137,7 @@ export class SeederService implements OnApplicationBootstrap {
       [
         title, 'En esta lección aprenderás los conceptos básicos del tema.',
         youtubeUrl, videoId, order, 600, order === 1,
-        JSON.stringify([{ title: 'Documentación MDN', url: 'https://developer.mozilla.org' }]),
+        null,
         null, sectionId,
       ],
     );

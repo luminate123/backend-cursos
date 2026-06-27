@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 
@@ -42,5 +42,14 @@ export class UploadsService {
     );
 
     return { uploadUrl, publicUrl: `${this.publicUrl}/${key}`, key };
+  }
+
+  // Deletes an object from R2 given its public url. No-ops for urls outside
+  // our bucket (e.g. external links), so it's safe to call on any resource.
+  async deleteByUrl(url: string): Promise<void> {
+    if (!url.startsWith(`${this.publicUrl}/`)) return;
+    const key = url.slice(this.publicUrl.length + 1);
+    if (!key) return;
+    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
