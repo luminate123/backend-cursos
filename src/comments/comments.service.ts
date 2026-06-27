@@ -5,6 +5,7 @@ import { Comment } from '../entities/comment.entity';
 import { Enrollment, EnrollmentStatus } from '../entities/enrollment.entity';
 import { Course } from '../entities/course.entity';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { toPublicUser } from '../common/public-user';
 
 @Injectable()
 export class CommentsService {
@@ -28,6 +29,13 @@ export class CommentsService {
       order: { createdAt: 'DESC' },
     });
 
+    // Strip author PII (email/flags) — this endpoint is public.
+    for (const root of roots) {
+      (root as any).user = toPublicUser(root.user);
+      for (const reply of root.replies ?? []) {
+        (reply as any).user = toPublicUser(reply.user);
+      }
+    }
     return roots;
   }
 
@@ -60,9 +68,11 @@ export class CommentsService {
       parentId: dto.parentId ?? null,
     });
     const saved = await this.commentRepository.save(comment);
-    return this.commentRepository.findOne({
+    const result = await this.commentRepository.findOne({
       where: { id: saved.id },
       relations: ['user'],
-    }) as Promise<Comment>;
+    });
+    if (result) (result as any).user = toPublicUser(result.user);
+    return result as Comment;
   }
 }

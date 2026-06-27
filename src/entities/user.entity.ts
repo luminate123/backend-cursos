@@ -18,7 +18,9 @@ export class User {
   @Column({ type: 'varchar', unique: true })
   email: string;
 
-  @Column({ type: 'varchar' })
+  // select:false → never loaded unless explicitly addSelect'd (login only).
+  // Prevents the hash leaking through any `user`/`instructor` relation join.
+  @Column({ type: 'varchar', select: false })
   @Exclude()
   password: string;
 

@@ -12,6 +12,7 @@ import { UpdateCourseDto } from './dto/update-course.dto';
 import { QueryCoursesDto } from './dto/query-courses.dto';
 import { Role } from '../enums/role.enum';
 import { CourseAccessService, Requester } from '../common/course-access.service';
+import { toPublicUser } from '../common/public-user';
 
 @Injectable()
 export class CoursesService {
@@ -110,6 +111,8 @@ export class CoursesService {
     for (const section of course.sections ?? []) {
       this.courseAccess.redactLessons(section.lessons, fullAccess);
     }
+    // Instructor is exposed publicly here — hide email/account flags.
+    (course as any).instructor = toPublicUser(course.instructor);
     return course;
   }
 

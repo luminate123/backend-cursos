@@ -49,9 +49,12 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    const user = await this.userRepository.findOne({
-      where: { email: dto.email },
-    });
+    // password is select:false on the entity — load it explicitly here only.
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.password')
+      .where('user.email = :email', { email: dto.email })
+      .getOne();
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Invalid credentials');
     }

@@ -13,6 +13,7 @@ import { Course } from '../entities/course.entity';
 import { Lesson } from '../entities/lesson.entity';
 import { User } from '../entities/user.entity';
 import { Role } from '../enums/role.enum';
+import { toPublicUser } from '../common/public-user';
 
 @Injectable()
 export class EnrollmentsService {
@@ -185,17 +186,24 @@ export class EnrollmentsService {
 
     if (status) qb.andWhere('enrollment.status = :status', { status });
 
-    return qb.getMany();
+    const enrollments = await qb.getMany();
+    // Hide student email/flags from the instructor view.
+    for (const e of enrollments) (e as any).user = toPublicUser(e.user);
+    return enrollments;
   }
 
   // ─── Student: get my enrollments ────────────────────────────────────────────
 
   async getMyEnrollments(userId: string) {
-    return this.enrollmentRepository.find({
+    const enrollments = await this.enrollmentRepository.find({
       where: { userId },
       relations: ['course', 'course.instructor'],
       order: { updatedAt: 'DESC' },
     });
+    for (const e of enrollments) {
+      if (e.course) (e.course as any).instructor = toPublicUser(e.course.instructor);
+    }
+    return enrollments;
   }
 
   // ─── Student/Instructor: get single enrollment for a course ─────────────────

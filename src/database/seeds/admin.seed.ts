@@ -145,7 +145,7 @@ async function upsertLesson(
       order,
       600,
       order === 1, // first lesson free
-      JSON.stringify([{ title: 'Documentación MDN', url: 'https://developer.mozilla.org' }]),
+      null,
       null,
       sectionId,
     ],
@@ -202,6 +202,15 @@ async function upsertEnrollment(
 // ─── Main seed ───────────────────────────────────────────────────────────────
 
 async function seed() {
+  // In production a default admin password is a takeover risk — require an
+  // explicit one. Dev keeps the convenience default.
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'Admin123!';
+  if (process.env.NODE_ENV === 'production' && !process.env.SEED_ADMIN_PASSWORD) {
+    throw new Error(
+      'Refusing to seed: set SEED_ADMIN_PASSWORD (do not use the default admin password in production).',
+    );
+  }
+
   await AppDataSource.initialize();
   console.log('\n🌱 Seeding database...\n');
 
@@ -213,7 +222,7 @@ async function seed() {
     'Admin',
     'EduTech',
     'ADMIN',
-    'Admin123!',
+    adminPassword,
   );
   const instructorId = await upsertUser(
     AppDataSource,
@@ -272,7 +281,7 @@ async function seed() {
 
   console.log('\n✅ Seed complete!\n');
   console.log('─────────────────────────────────────────');
-  console.log('  admin@edutech.com       → Admin123!');
+  console.log(`  admin@edutech.com       → ${adminPassword}`);
   console.log('  instructor@edutech.com  → Instructor123!');
   console.log('  estudiante@edutech.com  → Estudiante123!');
   console.log('─────────────────────────────────────────\n');
