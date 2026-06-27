@@ -11,12 +11,14 @@ import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { QueryCoursesDto } from './dto/query-courses.dto';
 import { Role } from '../enums/role.enum';
+import { CourseAccessService, Requester } from '../common/course-access.service';
 
 @Injectable()
 export class CoursesService {
   constructor(
     @InjectRepository(Course)
     private courseRepository: Repository<Course>,
+    private courseAccess: CourseAccessService,
   ) {}
 
   private generateSlug(title: string): string {
@@ -85,7 +87,7 @@ export class CoursesService {
     return { data, meta: { total, page, limit, lastPage: Math.ceil(total / limit) } };
   }
 
-  async findOne(slugOrId: string): Promise<Course> {
+  async findOne(slugOrId: string, requester?: Requester): Promise<Course> {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugOrId);
 
     const course = await this.courseRepository.findOne({
@@ -96,6 +98,18 @@ export class CoursesService {
       order: { sections: { order: 'ASC', lessons: { order: 'ASC' } } },
     });
     if (!course) throw new NotFoundException('Course not found');
+
+    const fullAccess = await this.courseAccess.hasFullAccess(course, requester);
+
+    // Drafts are only visible to owner/admin (both covered by fullAccess).
+    if (!course.isPublished && !fullAccess) {
+      throw new NotFoundException('Course not found');
+    }
+
+    // Strip protected lesson fields for viewers without full access.
+    for (const section of course.sections ?? []) {
+      this.courseAccess.redactLessons(section.lessons, fullAccess);
+    }
     return course;
   }
 

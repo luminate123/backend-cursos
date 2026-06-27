@@ -7,6 +7,7 @@ import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { Role } from '../enums/role.enum';
 import { UploadsService } from '../uploads/uploads.service';
+import { CourseAccessService, Requester } from '../common/course-access.service';
 
 @Injectable()
 export class LessonsService {
@@ -16,6 +17,7 @@ export class LessonsService {
     @InjectRepository(Section)
     private sectionRepository: Repository<Section>,
     private uploadsService: UploadsService,
+    private courseAccess: CourseAccessService,
   ) {}
 
   private extractYoutubeId(url: string): string | null {
@@ -45,16 +47,39 @@ export class LessonsService {
     return saved;
   }
 
-  async findBySection(sectionId: string): Promise<Lesson[]> {
-    return this.lessonRepository.find({
+  async findBySection(sectionId: string, requester?: Requester): Promise<Lesson[]> {
+    const section = await this.sectionRepository.findOne({
+      where: { id: sectionId },
+      relations: ['course'],
+    });
+    if (!section) throw new NotFoundException('Section not found');
+
+    const fullAccess = await this.courseAccess.hasFullAccess(section.course, requester);
+    if (!section.course.isPublished && !fullAccess) {
+      throw new NotFoundException('Section not found');
+    }
+
+    const lessons = await this.lessonRepository.find({
       where: { sectionId },
       order: { order: 'ASC' },
     });
+    this.courseAccess.redactLessons(lessons, fullAccess);
+    return lessons;
   }
 
-  async findOne(id: string): Promise<Lesson> {
-    const lesson = await this.lessonRepository.findOne({ where: { id } });
+  async findOne(id: string, requester?: Requester): Promise<Lesson> {
+    const lesson = await this.lessonRepository.findOne({
+      where: { id },
+      relations: ['section', 'section.course'],
+    });
     if (!lesson) throw new NotFoundException('Lesson not found');
+
+    const fullAccess = await this.courseAccess.hasFullAccess(lesson.section.course, requester);
+    if (!lesson.section.course.isPublished && !fullAccess) {
+      throw new NotFoundException('Lesson not found');
+    }
+
+    this.courseAccess.redactLessons([lesson], fullAccess);
     return lesson;
   }
 
@@ -84,13 +109,19 @@ export class LessonsService {
     if (!section) throw new NotFoundException('Section not found');
     this.checkOwnership(section, userId, userRole);
 
-    await Promise.all(
-      orderedIds.map((id, index) =>
-        this.lessonRepository.update(id, { order: index }),
-      ),
+    // Only reorder lessons that actually belong to this section — prevents
+    // touching another section/course's lessons via crafted ids.
+    const sectionLessonIds = new Set(
+      (await this.lessonRepository.find({ where: { sectionId }, select: ['id'] })).map((l) => l.id),
     );
 
-    return this.findBySection(sectionId);
+    await Promise.all(
+      orderedIds
+        .filter((id) => sectionLessonIds.has(id))
+        .map((id, index) => this.lessonRepository.update(id, { order: index })),
+    );
+
+    return this.lessonRepository.find({ where: { sectionId }, order: { order: 'ASC' } });
   }
 
   async remove(id: string, userId: string, userRole: Role): Promise<void> {

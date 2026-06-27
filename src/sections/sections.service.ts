@@ -6,6 +6,7 @@ import { Course } from '../entities/course.entity';
 import { CreateSectionDto } from './dto/create-section.dto';
 import { UpdateSectionDto } from './dto/update-section.dto';
 import { Role } from '../enums/role.enum';
+import { CourseAccessService, Requester } from '../common/course-access.service';
 
 @Injectable()
 export class SectionsService {
@@ -14,6 +15,7 @@ export class SectionsService {
     private sectionRepository: Repository<Section>,
     @InjectRepository(Course)
     private courseRepository: Repository<Course>,
+    private courseAccess: CourseAccessService,
   ) {}
 
   async create(courseId: string, dto: CreateSectionDto, userId: string, userRole: Role): Promise<Section> {
@@ -31,12 +33,24 @@ export class SectionsService {
     return this.sectionRepository.save(section);
   }
 
-  async findByCourse(courseId: string): Promise<Section[]> {
-    return this.sectionRepository.find({
+  async findByCourse(courseId: string, requester?: Requester): Promise<Section[]> {
+    const course = await this.courseRepository.findOne({ where: { id: courseId } });
+    if (!course) throw new NotFoundException('Course not found');
+
+    const fullAccess = await this.courseAccess.hasFullAccess(course, requester);
+    if (!course.isPublished && !fullAccess) {
+      throw new NotFoundException('Course not found');
+    }
+
+    const sections = await this.sectionRepository.find({
       where: { courseId },
       relations: ['lessons'],
       order: { order: 'ASC', lessons: { order: 'ASC' } },
     });
+    for (const section of sections) {
+      this.courseAccess.redactLessons(section.lessons, fullAccess);
+    }
+    return sections;
   }
 
   async update(id: string, dto: UpdateSectionDto, userId: string, userRole: Role): Promise<Section> {
@@ -56,13 +70,22 @@ export class SectionsService {
     if (!course) throw new NotFoundException('Course not found');
     this.checkOwnership(course, userId, userRole);
 
-    await Promise.all(
-      orderedIds.map((id, index) =>
-        this.sectionRepository.update(id, { order: index }),
-      ),
+    // Only reorder sections that belong to this course.
+    const courseSectionIds = new Set(
+      (await this.sectionRepository.find({ where: { courseId }, select: ['id'] })).map((s) => s.id),
     );
 
-    return this.findByCourse(courseId);
+    await Promise.all(
+      orderedIds
+        .filter((id) => courseSectionIds.has(id))
+        .map((id, index) => this.sectionRepository.update(id, { order: index })),
+    );
+
+    return this.sectionRepository.find({
+      where: { courseId },
+      relations: ['lessons'],
+      order: { order: 'ASC', lessons: { order: 'ASC' } },
+    });
   }
 
   async remove(id: string, userId: string, userRole: Role): Promise<void> {

@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   Body,
+  UseGuards,
 } from '@nestjs/common';
 import { CoursesService } from './courses.service';
 import { CreateCourseDto } from './dto/create-course.dto';
@@ -17,6 +18,8 @@ import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
 import { Roles } from '../decorators/roles.decorator';
 import { Role } from '../enums/role.enum';
+import { OptionalJwtAuthGuard } from '../guards/optional-jwt-auth.guard';
+import { Requester } from '../common/course-access.service';
 
 @Controller('courses')
 export class CoursesController {
@@ -29,11 +32,16 @@ export class CoursesController {
     return this.coursesService.findAll(query);
   }
 
-  // Public: get single course with roadmap
+  // Public: get single course with roadmap. Optional auth — protected lesson
+  // fields are redacted for non-enrolled viewers, drafts hidden from non-owners.
   @Public()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':slugOrId')
-  findOne(@Param('slugOrId') slugOrId: string) {
-    return this.coursesService.findOne(slugOrId);
+  findOne(
+    @Param('slugOrId') slugOrId: string,
+    @CurrentUser() user?: Requester,
+  ) {
+    return this.coursesService.findOne(slugOrId, user);
   }
 
   // Instructor/Admin: get my courses
