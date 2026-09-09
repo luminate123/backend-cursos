@@ -17,7 +17,7 @@ import { SeederService } from './seeds/seeder.service';
           logging: configService.get<string>('NODE_ENV') !== 'production',
           migrations: [__dirname + '/migrations/*{.ts,.js}'],
           migrationsRun: true,
-          ssl: databaseUrl ? { rejectUnauthorized: false } : false,
+          ssl: databaseUrl?.includes('sslmode=require') ? { rejectUnauthorized: false } : false,
         };
         if (databaseUrl) {
           return { ...base, url: databaseUrl };
