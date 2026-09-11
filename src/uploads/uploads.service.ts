@@ -5,11 +5,18 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { randomUUID } from 'crypto';
 import { Role } from '../enums/role.enum';
 import type { Requester } from '../common/course-access.service';
+import { MAX_RECEIPT_BYTES } from './dto/presign.dto';
 
 // Allowlist of downloadable material types. Excludes html/svg/js and other
 // renderable/executable types to prevent stored XSS on the public bucket domain.
@@ -30,6 +37,14 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'image/jpeg',
   'image/gif',
   'image/webp',
+]);
+
+// Comprobantes de pago: solo imagen o PDF. Nada renderizable/ejecutable.
+const RECEIPT_CONTENT_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/pdf',
 ]);
 
 @Injectable()
@@ -64,16 +79,65 @@ export class UploadsService {
     if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
       throw new BadRequestException('Tipo de archivo no permitido');
     }
-    const safeName = filename.replace(/[^\w.-]/g, '_').slice(-100);
-    const key = `resources/${userId}/${randomUUID()}-${safeName}`;
-
-    const uploadUrl = await getSignedUrl(
-      this.s3,
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }),
-      { expiresIn: 300 },
-    );
-
+    const key = `resources/${userId}/${randomUUID()}-${this.safeName(filename)}`;
+    const uploadUrl = await this.presignPut(key, contentType);
     return { uploadUrl, publicUrl: `${this.publicUrl}/${key}`, key };
+  }
+
+  /**
+   * Presign para el comprobante de pago. A diferencia de `presign`, NO devuelve
+   * una URL pública: una captura de transferencia lleva datos bancarios del
+   * alumno, y una URL con UUID en un bucket público no es control de acceso.
+   * El archivo solo se lee luego por `presignGet`, tras validar quién pregunta.
+   */
+  async presignReceipt(filename: string, contentType: string, size: number, userId: string) {
+    if (!RECEIPT_CONTENT_TYPES.has(contentType)) {
+      throw new BadRequestException('El comprobante debe ser una imagen o un PDF');
+    }
+    if (!Number.isInteger(size) || size < 1 || size > MAX_RECEIPT_BYTES) {
+      throw new BadRequestException('El comprobante supera el límite de 10 MB');
+    }
+    const key = `receipts/${userId}/${randomUUID()}-${this.safeName(filename)}`;
+    const uploadUrl = await this.presignPut(key, contentType, size);
+    return { uploadUrl, key };
+  }
+
+  /** URL de lectura temporal. Quien llama ya validó la autorización. */
+  presignGet(key: string, expiresIn = 300): Promise<string> {
+    return getSignedUrl(
+      this.s3,
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      { expiresIn },
+    );
+  }
+
+  /** Confirma que el objeto existe: evita guardar una key que nadie subió. */
+  async objectExists(key: string): Promise<boolean> {
+    try {
+      await this.s3.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private safeName(filename: string): string {
+    return filename.replace(/[^\w.-]/g, '_').slice(-100);
+  }
+
+  // Con `contentLength`, el tamaño entra en la firma: un PUT de otro tamaño
+  // falla con 403 en R2.
+  private presignPut(key: string, contentType: string, contentLength?: number): Promise<string> {
+    return getSignedUrl(
+      this.s3,
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ContentType: contentType,
+        ContentLength: contentLength,
+      }),
+      { expiresIn: 300, signableHeaders: new Set(['content-length']) },
+    );
   }
 
   // Deletes an object from R2 given its public url. No-ops for urls outside
@@ -86,6 +150,8 @@ export class UploadsService {
     if (!key) return;
 
     if (requester && requester.role !== Role.ADMIN) {
+      // Los comprobantes de pago quedan fuera a propósito: el alumno no borra
+      // la evidencia de un pago ya enviado a revisión.
       if (!key.startsWith(`resources/${requester.sub}/`)) {
         throw new ForbiddenException('No puedes eliminar este archivo');
       }

@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsInt, Min, MinLength } from 'class-validator';
+import { IsString, IsOptional, IsInt, Min, MinLength, IsEnum } from 'class-validator';
+import { LearningPhase } from '../../entities/section.entity';
 
 export class CreateSectionDto {
   @IsString()
@@ -13,4 +14,8 @@ export class CreateSectionDto {
   @Min(0)
   @IsOptional()
   order?: number;
+
+  @IsEnum(LearningPhase)
+  @IsOptional()
+  phase?: LearningPhase;
 }

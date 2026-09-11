@@ -66,7 +66,8 @@ export class CoursesService {
       .where('course.isPublished = :published', { published: true })
       .select([
         'course.id', 'course.title', 'course.slug', 'course.shortDescription',
-        'course.thumbnail', 'course.level', 'course.category', 'course.language',
+        'course.thumbnail', 'course.level', 'course.line', 'course.discipline',
+        'course.academicHours', 'course.language',
         'course.price', 'course.totalDurationSeconds', 'course.totalLessons',
         'course.rating', 'course.ratingCount', 'course.enrollmentCount',
         'course.createdAt',
@@ -78,7 +79,8 @@ export class CoursesService {
         search: `%${query.search}%`,
       });
     }
-    if (query.category) qb.andWhere('course.category = :category', { category: query.category });
+    if (query.line) qb.andWhere('course.line = :line', { line: query.line });
+    if (query.discipline) qb.andWhere('course.discipline = :discipline', { discipline: query.discipline });
     if (query.level) qb.andWhere('course.level = :level', { level: query.level });
     if (query.language) qb.andWhere('course.language = :language', { language: query.language });
 

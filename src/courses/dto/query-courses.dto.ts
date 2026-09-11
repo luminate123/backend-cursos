@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsString, IsNumberString } from 'class-validator';
-import { CourseLevel, CourseCategory } from '../../entities/course.entity';
+import { CourseLevel, CourseLine, Discipline } from '../../entities/course.entity';
 
 export class QueryCoursesDto {
   @IsOptional()
@@ -15,8 +15,12 @@ export class QueryCoursesDto {
   search?: string;
 
   @IsOptional()
-  @IsEnum(CourseCategory)
-  category?: CourseCategory;
+  @IsEnum(CourseLine)
+  line?: CourseLine;
+
+  @IsOptional()
+  @IsEnum(Discipline)
+  discipline?: Discipline;
 
   @IsOptional()
   @IsEnum(CourseLevel)

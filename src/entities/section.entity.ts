@@ -11,6 +11,16 @@ import {
 import { Course } from './course.entity';
 import { Lesson } from './lesson.entity';
 
+/**
+ * Modelo de formación KORE: COMPRENDER -> APLICAR -> CREAR.
+ * Nullable: los cursos KORE Essentials cortos no necesitan declarar fase.
+ */
+export enum LearningPhase {
+  LEARN = 'LEARN', // KORE LEARN — comprender el conocimiento
+  APPLY = 'APPLY', // KORE APPLY — aplicarlo a situaciones profesionales
+  CREATE = 'CREATE', // KORE CREATE — crear soluciones y proyectos
+}
+
 @Entity('sections')
 export class Section {
   @PrimaryGeneratedColumn('uuid')
@@ -21,6 +31,9 @@ export class Section {
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
+
+  @Column({ type: 'enum', enum: LearningPhase, nullable: true })
+  phase: LearningPhase | null;
 
   // Position in the course roadmap (0-indexed)
   @Column({ type: 'int', default: 0 })

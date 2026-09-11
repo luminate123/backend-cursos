@@ -2,13 +2,16 @@ import {
   IsString,
   IsEnum,
   IsOptional,
+  IsBoolean,
+  Max,
+  IsInt,
   IsNumber,
   IsArray,
   IsUrl,
   MinLength,
   Min,
 } from 'class-validator';
-import { CourseLevel, CourseCategory } from '../../entities/course.entity';
+import { CourseLevel, CourseLine, Discipline } from '../../entities/course.entity';
 
 export class UpdateCourseDto {
   @IsString()
@@ -37,9 +40,28 @@ export class UpdateCourseDto {
   @IsOptional()
   level?: CourseLevel;
 
-  @IsEnum(CourseCategory)
+  @IsEnum(CourseLine)
   @IsOptional()
-  category?: CourseCategory;
+  line?: CourseLine;
+
+  @IsEnum(Discipline)
+  @IsOptional()
+  discipline?: Discipline;
+
+  @IsInt()
+  @Min(0)
+  @Max(2000)
+  @IsOptional()
+  academicHours?: number;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  competencies?: string[];
+
+  @IsBoolean()
+  @IsOptional()
+  hasFormalEvaluation?: boolean;
 
   @IsString()
   @IsOptional()

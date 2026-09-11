@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 
 config();
+process.env.TZ = 'America/Lima'; // igual que main.ts, para migraciones por CLI
 
 export default new DataSource({
   type: 'postgres',

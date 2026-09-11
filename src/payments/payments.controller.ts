@@ -1,0 +1,82 @@
+import { Controller, Get, Post, Patch, Param, Body, Query } from '@nestjs/common';
+import { PaymentsService } from './payments.service';
+import { CurrentUser } from '../decorators/current-user.decorator';
+import { Roles } from '../decorators/roles.decorator';
+import { Role } from '../enums/role.enum';
+import {
+  CheckoutDto,
+  RejectPaymentDto,
+  QueryPaymentsDto,
+  QueryRevenueDto,
+} from './dto/checkout.dto';
+
+@Controller()
+export class PaymentsController {
+  constructor(private paymentsService: PaymentsService) {}
+
+  // ─── Alumno ────────────────────────────────────────────────────────────────
+
+  // Datos de cobro. Autenticado, no público: no hay razón para exponer las
+  // cuentas de la empresa a cualquier visitante.
+  @Get('payments/bank-info')
+  getBankInfo() {
+    return this.paymentsService.getBankInfo();
+  }
+
+  // Solicita la inscripción adjuntando el comprobante de pago.
+  @Post('courses/:courseId/checkout')
+  checkout(
+    @Param('courseId') courseId: string,
+    @Body() dto: CheckoutDto,
+    @CurrentUser('sub') userId: string,
+  ) {
+    return this.paymentsService.checkout(courseId, userId, dto);
+  }
+
+  @Get('payments/my')
+  getMyPayments(@CurrentUser('sub') userId: string) {
+    return this.paymentsService.getMyPayments(userId);
+  }
+
+  // El comprobante solo se sirve por URL temporal, al dueño o a un admin.
+  @Get('payments/:id/receipt')
+  getReceipt(
+    @Param('id') id: string,
+    @CurrentUser('sub') userId: string,
+    @CurrentUser('role') role: Role,
+  ) {
+    return this.paymentsService.getReceiptUrl(id, userId, role);
+  }
+
+  // ─── Administración ────────────────────────────────────────────────────────
+  // Los pagos los revisa solo el admin, nunca el instructor: es dinero.
+
+  @Get('payments')
+  @Roles(Role.ADMIN)
+  findAll(@Query() query: QueryPaymentsDto) {
+    return this.paymentsService.findAll(query);
+  }
+
+  @Patch('payments/:id/approve')
+  @Roles(Role.ADMIN)
+  approve(@Param('id') id: string, @CurrentUser('sub') adminId: string) {
+    return this.paymentsService.approve(id, adminId);
+  }
+
+  @Patch('payments/:id/reject')
+  @Roles(Role.ADMIN)
+  reject(
+    @Param('id') id: string,
+    @Body() dto: RejectPaymentDto,
+    @CurrentUser('sub') adminId: string,
+  ) {
+    return this.paymentsService.reject(id, adminId, dto.reason);
+  }
+
+  // Vista transaccional: cuánto ingresó por venta de programas.
+  @Get('admin/revenue')
+  @Roles(Role.ADMIN)
+  getRevenue(@Query() query: QueryRevenueDto) {
+    return this.paymentsService.getRevenue(query);
+  }
+}

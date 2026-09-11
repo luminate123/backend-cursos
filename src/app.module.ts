@@ -9,6 +9,8 @@ import { SectionsModule } from './sections/sections.module';
 import { LessonsModule } from './lessons/lessons.module';
 import { EnrollmentsModule } from './enrollments/enrollments.module';
 import { CommentsModule } from './comments/comments.module';
+import { PaymentsModule } from './payments/payments.module';
+import { CertificatesModule } from './certificates/certificates.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
@@ -24,6 +26,8 @@ import { RolesGuard } from './guards/roles.guard';
     LessonsModule,
     EnrollmentsModule,
     CommentsModule,
+    PaymentsModule,
+    CertificatesModule,
     UploadsModule,
   ],
   providers: [
