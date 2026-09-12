@@ -48,29 +48,42 @@ export class PaymentsController {
     return this.paymentsService.getReceiptUrl(id, userId, role);
   }
 
-  // ─── Administración ────────────────────────────────────────────────────────
-  // Los pagos los revisa solo el admin, nunca el instructor: es dinero.
+  // ─── Revisión de comprobantes ──────────────────────────────────────────────
+  // El dinero entra a la cuenta del instructor, así que es él quien confirma
+  // que llegó: aprobar el comprobante es lo que da acceso al alumno. El admin
+  // ve toda la academia y puede intervenir.
 
+  // Cola completa. Solo admin: es la vista de supervisión.
   @Get('payments')
   @Roles(Role.ADMIN)
   findAll(@Query() query: QueryPaymentsDto) {
     return this.paymentsService.findAll(query);
   }
 
+  // Cola del instructor, acotada a sus programas por el id del token.
+  @Get('instructor/payments')
+  @Roles(Role.INSTRUCTOR)
+  findMine(@Query() query: QueryPaymentsDto, @CurrentUser('sub') userId: string) {
+    return this.paymentsService.findAll(query, userId);
+  }
+
+  // Confirmar o rechazar un cobro es exclusivo del instructor dueño del
+  // programa: el dinero entra a su cuenta y solo él puede verificar que llegó.
+  // El administrador supervisa en lectura, no interviene.
   @Patch('payments/:id/approve')
-  @Roles(Role.ADMIN)
-  approve(@Param('id') id: string, @CurrentUser('sub') adminId: string) {
-    return this.paymentsService.approve(id, adminId);
+  @Roles(Role.INSTRUCTOR)
+  approve(@Param('id') id: string, @CurrentUser('sub') reviewerId: string) {
+    return this.paymentsService.approve(id, reviewerId);
   }
 
   @Patch('payments/:id/reject')
-  @Roles(Role.ADMIN)
+  @Roles(Role.INSTRUCTOR)
   reject(
     @Param('id') id: string,
     @Body() dto: RejectPaymentDto,
-    @CurrentUser('sub') adminId: string,
+    @CurrentUser('sub') reviewerId: string,
   ) {
-    return this.paymentsService.reject(id, adminId, dto.reason);
+    return this.paymentsService.reject(id, reviewerId, dto.reason);
   }
 
   // Vista general: cuánto ingresó por venta de programas, en toda la academia.

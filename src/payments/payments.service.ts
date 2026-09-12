@@ -142,8 +142,11 @@ export class PaymentsService {
       .getMany();
   }
 
-  /** Cola de revisión del administrador. */
-  async findAll(query: QueryPaymentsDto) {
+  /**
+   * Cola de revisión. Con `instructorId` devuelve solo los comprobantes de los
+   * programas de ese instructor; sin él, los de toda la academia (admin).
+   */
+  async findAll(query: QueryPaymentsDto, instructorId?: string) {
     const page = Math.max(1, parseInt(query.page || '1') || 1);
     const limit = Math.min(100, Math.max(1, parseInt(query.limit || '20') || 20));
 
@@ -167,23 +170,27 @@ export class PaymentsService {
       .take(limit);
 
     if (query.status) qb.andWhere('payment.status = :status', { status: query.status });
+    this.owned(qb, instructorId);
 
     const [data, total] = await qb.getManyAndCount();
     return { data, meta: { total, page, limit, lastPage: Math.ceil(total / limit) } };
   }
 
   /**
-   * URL temporal para ver el comprobante. Solo el alumno dueño del pago o un
-   * administrador: el archivo nunca es público.
+   * URL temporal para ver el comprobante. Lo abren el alumno dueño del pago,
+   * el instructor del programa (tiene que verificar que le llegó el dinero) y
+   * el administrador. El archivo nunca es público.
    */
   async getReceiptUrl(paymentId: string, requesterId: string, requesterRole: Role) {
     const payment = await this.paymentRepository.findOne({
       where: { id: paymentId },
-      relations: ['enrollment'],
+      relations: ['enrollment', 'enrollment.course'],
     });
     if (!payment) throw new NotFoundException('Pago no encontrado');
 
-    if (requesterRole !== Role.ADMIN && payment.enrollment.userId !== requesterId) {
+    const isOwnerStudent = payment.enrollment.userId === requesterId;
+    const isCourseInstructor = payment.enrollment.course?.instructorId === requesterId;
+    if (requesterRole !== Role.ADMIN && !isOwnerStudent && !isCourseInstructor) {
       throw new ForbiddenException('No puedes ver este comprobante');
     }
 
@@ -191,24 +198,37 @@ export class PaymentsService {
   }
 
   /**
+   * Solo el instructor dueño del programa confirma o rechaza su cobro: el
+   * dinero entra a su cuenta y es el único que puede verificar que llegó.
+   * Sin excepción para el administrador —supervisa en lectura— y, con varios
+   * instructores, esto impide además que uno toque el cobro de otro.
+   */
+  private assertCanReview(payment: Payment, reviewerId: string) {
+    if (payment.enrollment?.course?.instructorId !== reviewerId) {
+      throw new ForbiddenException('Este pago no corresponde a un programa tuyo');
+    }
+  }
+
+  /**
    * Aprueba el pago y con él la inscripción, en una transacción.
    * Idempotente: solo un pago en PENDING pasa a APPROVED, así que un doble
    * clic no puede contar el ingreso dos veces.
    */
-  async approve(paymentId: string, adminId: string): Promise<Payment> {
+  async approve(paymentId: string, reviewerId: string): Promise<Payment> {
     return this.dataSource.transaction(async (manager) => {
       const payments = manager.getRepository(Payment);
       const payment = await payments.findOne({
         where: { id: paymentId },
-        relations: ['enrollment'],
+        relations: ['enrollment', 'enrollment.course'],
       });
       if (!payment) throw new NotFoundException('Pago no encontrado');
+      this.assertCanReview(payment, reviewerId);
       if (payment.status !== PaymentStatus.PENDING) {
         throw new ConflictException(`El pago ya fue ${payment.status.toLowerCase()}`);
       }
 
       payment.status = PaymentStatus.APPROVED;
-      payment.reviewedBy = adminId;
+      payment.reviewedBy = reviewerId;
       payment.reviewedAt = new Date();
       payment.rejectionReason = null;
       await payments.save(payment);
@@ -218,7 +238,7 @@ export class PaymentsService {
       if (enrollment.status !== EnrollmentStatus.APPROVED) {
         enrollment.status = EnrollmentStatus.APPROVED;
         enrollment.rejectionReason = null;
-        enrollment.reviewedBy = adminId;
+        enrollment.reviewedBy = reviewerId;
         enrollment.reviewedAt = new Date();
         await enrollments.save(enrollment);
         await manager
@@ -231,15 +251,19 @@ export class PaymentsService {
   }
 
   /** Rechaza el comprobante. La inscripción queda PENDING para reintentar. */
-  async reject(paymentId: string, adminId: string, reason: string): Promise<Payment> {
-    const payment = await this.paymentRepository.findOne({ where: { id: paymentId } });
+  async reject(paymentId: string, reviewerId: string, reason: string): Promise<Payment> {
+    const payment = await this.paymentRepository.findOne({
+      where: { id: paymentId },
+      relations: ['enrollment', 'enrollment.course'],
+    });
     if (!payment) throw new NotFoundException('Pago no encontrado');
+    this.assertCanReview(payment, reviewerId);
     if (payment.status !== PaymentStatus.PENDING) {
       throw new ConflictException(`El pago ya fue ${payment.status.toLowerCase()}`);
     }
 
     payment.status = PaymentStatus.REJECTED;
-    payment.reviewedBy = adminId;
+    payment.reviewedBy = reviewerId;
     payment.reviewedAt = new Date();
     payment.rejectionReason = reason;
     return this.paymentRepository.save(payment);

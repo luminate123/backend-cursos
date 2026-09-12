@@ -12,6 +12,7 @@ import { LessonProgress } from '../entities/lesson-progress.entity';
 import { Course } from '../entities/course.entity';
 import { Lesson } from '../entities/lesson.entity';
 import { User } from '../entities/user.entity';
+import { Payment, PaymentStatus } from '../entities/payment.entity';
 import { Role } from '../enums/role.enum';
 import { toPublicUser } from '../common/public-user';
 
@@ -28,6 +29,8 @@ export class EnrollmentsService {
     private lessonRepository: Repository<Lesson>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Payment)
+    private paymentRepository: Repository<Payment>,
   ) {}
 
   // ─── Student: request enrollment ────────────────────────────────────────────
@@ -127,6 +130,21 @@ export class EnrollmentsService {
 
     if (enrollment.status !== EnrollmentStatus.PENDING) {
       throw new BadRequestException('Enrollment is not pending');
+    }
+
+    // Un programa de pago se activa confirmando el comprobante desde Pagos, que
+    // es donde el instructor verifica que el dinero entró a su cuenta. Sin esta
+    // comprobación se podía dar acceso a un programa de pago sin cobrarlo, y la
+    // venta nunca aparecía en los ingresos.
+    if (Number(enrollment.course.price) > 0) {
+      const approvedPayments = await this.paymentRepository.count({
+        where: { enrollmentId: enrollment.id, status: PaymentStatus.APPROVED },
+      });
+      if (approvedPayments === 0) {
+        throw new BadRequestException(
+          'Este programa es de pago: confirma el comprobante desde Pagos para dar el acceso',
+        );
+      }
     }
 
     enrollment.status = EnrollmentStatus.APPROVED;
