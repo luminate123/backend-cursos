@@ -73,10 +73,20 @@ export class PaymentsController {
     return this.paymentsService.reject(id, adminId, dto.reason);
   }
 
-  // Vista transaccional: cuánto ingresó por venta de programas.
+  // Vista general: cuánto ingresó por venta de programas, en toda la academia.
   @Get('admin/revenue')
   @Roles(Role.ADMIN)
   getRevenue(@Query() query: QueryRevenueDto) {
     return this.paymentsService.getRevenue(query);
+  }
+
+  // ─── Instructor ────────────────────────────────────────────────────────────
+
+  // Los ingresos del propio instructor. El id sale del token, nunca de un
+  // parámetro: un instructor no puede pedir la facturación de otro.
+  @Get('instructor/revenue')
+  @Roles(Role.INSTRUCTOR)
+  getMyRevenue(@Query() query: QueryRevenueDto, @CurrentUser('sub') userId: string) {
+    return this.paymentsService.getRevenue(query, userId);
   }
 }

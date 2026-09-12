@@ -248,19 +248,38 @@ export class PaymentsService {
   /**
    * Ingresos por venta de programas. Solo cuentan los pagos aprobados.
    *
+   * Con `instructorId` devuelve solo lo generado por los programas de ese
+   * instructor: es el mismo cálculo, acotado a sus cursos. Sin él es la vista
+   * general del administrador, que además trae el desglose por instructor.
+   *
    * ponytail: se agrega en vivo con SUM sobre `payments`; si el volumen pasa de
    * decenas de miles de pagos, materializar una tabla de totales por mes.
    */
-  async getRevenue(query: QueryRevenueDto) {
+  /**
+   * Acota una query de pagos a los programas de un instructor. Alias propios
+   * (`ownEnrollment`/`ownCourse`) para poder aplicarse también sobre queries que
+   * ya unieron `enrollment`/`course` por su cuenta.
+   */
+  private owned(qb: SelectQueryBuilder<Payment>, instructorId?: string) {
+    if (!instructorId) return qb;
+    return qb
+      .innerJoin('payment.enrollment', 'ownEnrollment')
+      .innerJoin('ownEnrollment.course', 'ownCourse')
+      .andWhere('ownCourse.instructorId = :instructorId', { instructorId });
+  }
+
+  async getRevenue(query: QueryRevenueDto, instructorId?: string) {
     const from = query.from ? parseLima(query.from) : null;
     const to = query.to ? rangeEnd(query.to) : null;
 
     // Acota al rango de fechas pedido. Se aplica sobre reviewedAt: la fecha en
     // que el ingreso se reconoció, no la de creación del comprobante.
+    // El filtro por instructor va aquí también: si se olvidara en una sola de
+    // las queries, ese instructor vería dinero de otro.
     const scoped = (qb: SelectQueryBuilder<Payment>) => {
       if (from) qb.andWhere('payment.reviewedAt >= :from', { from });
       if (to) qb.andWhere('payment.reviewedAt < :to', { to });
-      return qb;
+      return this.owned(qb, instructorId);
     };
 
     const totalsRow = await scoped(
@@ -272,9 +291,14 @@ export class PaymentsService {
       .addSelect('COUNT(*)', 'sales')
       .getRawOne<{ revenue: string; sales: string }>();
 
-    const pendingRow = await this.paymentRepository
-      .createQueryBuilder('payment')
-      .where('payment.status = :pending', { pending: PaymentStatus.PENDING })
+    // Lo pendiente no lleva rango de fechas (todavía no tiene reviewedAt), pero
+    // sí el filtro por instructor.
+    const pendingRow = await this.owned(
+      this.paymentRepository
+        .createQueryBuilder('payment')
+        .where('payment.status = :pending', { pending: PaymentStatus.PENDING }),
+      instructorId,
+    )
       .select('COALESCE(SUM(payment.amount), 0)', 'amount')
       .addSelect('COUNT(*)', 'count')
       .getRawOne<{ amount: string; count: string }>();
@@ -309,6 +333,37 @@ export class PaymentsService {
       .orderBy('revenue', 'DESC')
       .getRawMany<{ courseId: string; title: string; line: string; revenue: string; sales: string }>();
 
+    // Desglose por instructor: solo tiene sentido en la vista general del
+    // admin. Un instructor ya está mirando una sola columna, la suya.
+    const byInstructor = instructorId
+      ? []
+      : await scoped(
+          this.paymentRepository
+            .createQueryBuilder('payment')
+            .innerJoin('payment.enrollment', 'enrollment')
+            .innerJoin('enrollment.course', 'course')
+            .innerJoin('course.instructor', 'instructor')
+            .where('payment.status = :approved', { approved: PaymentStatus.APPROVED }),
+        )
+          .select('instructor.id', 'instructorId')
+          .addSelect('instructor.firstName', 'firstName')
+          .addSelect('instructor.lastName', 'lastName')
+          .addSelect('COALESCE(SUM(payment.amount), 0)', 'revenue')
+          .addSelect('COUNT(*)', 'sales')
+          .addSelect('COUNT(DISTINCT course.id)', 'courses')
+          .groupBy('instructor.id')
+          .addGroupBy('instructor.firstName')
+          .addGroupBy('instructor.lastName')
+          .orderBy('revenue', 'DESC')
+          .getRawMany<{
+            instructorId: string;
+            firstName: string;
+            lastName: string;
+            revenue: string;
+            sales: string;
+            courses: string;
+          }>();
+
     const revenue = Number(totalsRow?.revenue ?? 0);
     const sales = Number(totalsRow?.sales ?? 0);
 
@@ -330,6 +385,13 @@ export class PaymentsService {
         line: r.line,
         revenue: Number(r.revenue),
         sales: Number(r.sales),
+      })),
+      byInstructor: byInstructor.map((r) => ({
+        instructorId: r.instructorId,
+        name: `${r.firstName} ${r.lastName}`,
+        revenue: Number(r.revenue),
+        sales: Number(r.sales),
+        courses: Number(r.courses),
       })),
     };
   }

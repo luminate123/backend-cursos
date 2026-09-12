@@ -9,15 +9,23 @@ import { rangeEnd } from '../common/lima-time';
  * ponytail: sin base de datos ni módulo de Nest. Lo que se protege aquí es la
  * regla de dinero, no el driver de Postgres.
  */
-type Row = { amount: number; status: PaymentStatus; reviewedAt: Date | null };
+type Row = {
+  amount: number;
+  status: PaymentStatus;
+  reviewedAt: Date | null;
+  instructorId?: string;
+};
 
-function summarize(rows: Row[], from?: Date, to?: string) {
+function summarize(rows: Row[], from?: Date, to?: string, instructorId?: string) {
   const end = to ? rangeEnd(to) : null;
   const inRange = (r: Row) =>
     !!r.reviewedAt && (!from || r.reviewedAt >= from) && (!end || r.reviewedAt < end);
+  // Mismo filtro que PaymentsService.owned(): se aplica a lo aprobado y a lo
+  // pendiente por igual.
+  const mine = (r: Row) => !instructorId || r.instructorId === instructorId;
 
-  const approved = rows.filter((r) => r.status === PaymentStatus.APPROVED && inRange(r));
-  const pending = rows.filter((r) => r.status === PaymentStatus.PENDING);
+  const approved = rows.filter((r) => r.status === PaymentStatus.APPROVED && inRange(r) && mine(r));
+  const pending = rows.filter((r) => r.status === PaymentStatus.PENDING && mine(r));
 
   const totalRevenue = approved.reduce((sum, r) => sum + r.amount, 0);
   const sales = approved.length;
@@ -79,6 +87,27 @@ describe('ingresos', () => {
       { amount: 999, status: PaymentStatus.APPROVED, reviewedAt: d('2026-03-01T05:00:00Z') },
     ];
     expect(summarize(lastDay, undefined, '2026-02-28').totalRevenue).toBe(300);
+  });
+
+  it('un instructor solo ve el dinero de sus propios programas', () => {
+    const mixed: Row[] = [
+      { amount: 180, status: PaymentStatus.APPROVED, reviewedAt: d('2026-01-10'), instructorId: 'ana' },
+      { amount: 480, status: PaymentStatus.APPROVED, reviewedAt: d('2026-01-11'), instructorId: 'ana' },
+      { amount: 1200, status: PaymentStatus.APPROVED, reviewedAt: d('2026-01-12'), instructorId: 'luis' },
+      { amount: 150, status: PaymentStatus.PENDING, reviewedAt: null, instructorId: 'luis' },
+    ];
+
+    const ana = summarize(mixed, undefined, undefined, 'ana');
+    expect(ana.totalRevenue).toBe(660); // 180 + 480, nada de luis
+    expect(ana.sales).toBe(2);
+    expect(ana.pendingAmount).toBe(0); // el pendiente es de luis
+
+    const luis = summarize(mixed, undefined, undefined, 'luis');
+    expect(luis.totalRevenue).toBe(1200);
+    expect(luis.pendingAmount).toBe(150);
+
+    // Sin instructor es la vista general del admin: todo junto.
+    expect(summarize(mixed).totalRevenue).toBe(1860);
   });
 
   it('no divide por cero cuando no hay ventas', () => {
